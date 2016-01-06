@@ -20,7 +20,6 @@ import android.view.MenuItem;
 import android.widget.Toast;
 
 import com.example.framgianguyenkeninh.mapdemo.Item.DirectionPointGson;
-import com.example.framgianguyenkeninh.mapdemo.Item.LocationItem;
 import com.example.framgianguyenkeninh.mapdemo.Item.ReverseGeoCodeGson;
 import com.example.framgianguyenkeninh.mapdemo.R;
 import com.example.framgianguyenkeninh.mapdemo.StaticMethod;
@@ -60,13 +59,12 @@ public class MainActivity extends AppCompatActivity
     private Marker destinationMarker;
     private LocationRequest mLocationRequest;
     private OkHttpClient okHttpClient;
-    private LatLng origin;
-    private LatLng destination;
-    private boolean isDragging;
     private Polyline polyline;
     private String originName = "My Location";
     private String destinationName = "Destination Location";
     private boolean isSetMarker;
+    private GetDirection getDirection;
+    private GetNameFromLatLng getNameFromLatLng;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -125,7 +123,7 @@ public class MainActivity extends AppCompatActivity
             mMap.setOnMapClickListener(new GoogleMap.OnMapClickListener() {
                 @Override
                 public void onMapClick(LatLng latLng) {
-                    if (destinationMarker != null && isDragging == false) {
+                    if (destinationMarker != null) {
                         destinationMarker.remove();
                     }
                     destinationMarker = mMap.addMarker(new MarkerOptions().position(latLng)
@@ -133,7 +131,6 @@ public class MainActivity extends AppCompatActivity
                                     .title(destinationName)
                                     .icon(BitmapDescriptorFactory.defaultMarker(BitmapDescriptorFactory.HUE_AZURE))
                     );
-                    if (polyline != null) polyline.remove();
                     getDirection(mMarker.getPosition(), destinationMarker.getPosition());
                 }
             });
@@ -141,7 +138,6 @@ public class MainActivity extends AppCompatActivity
             mMap.setOnMarkerDragListener(new GoogleMap.OnMarkerDragListener() {
                 @Override
                 public void onMarkerDragStart(Marker marker) {
-                    isDragging = true;
                 }
 
                 @Override
@@ -151,8 +147,6 @@ public class MainActivity extends AppCompatActivity
 
                 @Override
                 public void onMarkerDragEnd(Marker marker) {
-                    isDragging = false;
-                    if (polyline != null) polyline.remove();
                     getDirection(mMarker.getPosition(), marker.getPosition());
                 }
             });
@@ -166,19 +160,19 @@ public class MainActivity extends AppCompatActivity
     };
 
     private void getDirection(LatLng origin, LatLng destination) {
-        getLatLngGeoCode(origin, 1);
-        getLatLngGeoCode(destination, 2);
-    }
+        if (polyline != null) polyline.remove();
+        String queryDirection =
+                "https://maps.googleapis.com/maps/api/directions/json?origin=" +
+                        origin.latitude + "," + origin.longitude +
+                        "&destination=" +
+                        destination.latitude + "," + destination.longitude +
+                        "&key=" + getString(R.string.google_api_browser_key);
 
-    private void getLatLngGeoCode(LatLng position, int type) {
-        try {
-            String queryResGeocode = "https://maps.googleapis.com/maps/api/geocode/json?latlng=" +
-                    position.latitude + "," + position.longitude +
-                    "&key=" + getString(R.string.google_api_browser_key);
-            new GetLatLng(queryResGeocode, type).execute();
-        } catch (Exception e) {
-            e.printStackTrace();
+        if (getDirection != null) {
+            getDirection.cancel(true);
         }
+        getDirection = new GetDirection();
+        getDirection.execute(queryDirection);
     }
 
     private LocationListener locationListener = new LocationListener() {
@@ -187,6 +181,13 @@ public class MainActivity extends AppCompatActivity
             if (mMarker != null) mMarker.remove();
             mMarker = mMap.addMarker(new MarkerOptions().position(new LatLng(location.getLatitude(), location.getLongitude()))
                     .title(originName));
+
+            if (getNameFromLatLng != null) {
+                getNameFromLatLng.cancel(true);
+            }
+            getNameFromLatLng = new GetNameFromLatLng(location);
+            getNameFromLatLng.execute();
+
             if (!isSetMarker) {
                 CameraUpdate center = CameraUpdateFactory.newLatLng(new LatLng(location.getLatitude(), location.getLongitude()));
                 mMap.moveCamera(center);
@@ -216,7 +217,7 @@ public class MainActivity extends AppCompatActivity
             mMap = googleMap;
             mMap.setMyLocationEnabled(true);
             mMap.moveCamera(CameraUpdateFactory.newLatLng(new LatLng(21.0162568, 105.7845594)));    // default location focused
-            mMap.animateCamera(CameraUpdateFactory.zoomTo(10));
+            mMap.animateCamera(CameraUpdateFactory.zoomTo(13));
         }
     };
 
@@ -291,70 +292,7 @@ public class MainActivity extends AppCompatActivity
         super.onStop();
     }
 
-    private class GetLatLng extends AsyncTask<String, Void, String> {
-        private String url;
-        private int type;
-
-        public GetLatLng(String url, int type) {
-            this.url = url;
-            this.type = type;
-        }
-
-        @Override
-        protected String doInBackground(String... ulr) {
-            Response response = null;
-            Request request = new Request.Builder()
-                    .url(this.url)
-                    .build();
-
-            try {
-                response = okHttpClient.newCall(request).execute();
-                return response.body().string();
-            } catch (IOException e) {
-                // TODO Auto-generated catch block
-                e.printStackTrace();
-            }
-            return null;
-
-        }
-
-        @Override
-        protected void onPostExecute(String result) {
-            Gson gson = new GsonBuilder()
-                    .setFieldNamingPolicy(FieldNamingPolicy.LOWER_CASE_WITH_UNDERSCORES)
-                    .create();
-            ReverseGeoCodeGson reverseGeoCodeGson = gson.fromJson(result, ReverseGeoCodeGson.class);
-            ReverseGeoCodeGson.Results resultsFirst = reverseGeoCodeGson.getResults().get(0);
-            LocationItem location = resultsFirst.getGeometry().getLocation();
-            if (this.type == 1) {
-                origin = new LatLng(location.getLat(), location.getLng());
-                originName = resultsFirst.getFormattedAddress();
-                mMarker.setTitle(originName);
-            } else {
-                destination = new LatLng(location.getLat(), location.getLng());
-                destinationName = resultsFirst.getFormattedAddress();
-                destinationMarker.setTitle(destinationName);
-                startGetDirection();
-            }
-            Log.i("ResGeocode :", result);
-        }
-
-    }
-
-    private void startGetDirection() {
-        String queryDirection =
-                "https://maps.googleapis.com/maps/api/directions/json?origin=" +
-                        origin.latitude + "," + origin.longitude +
-//                        "21.017324,105.784054" +
-                        "&destination=" +
-                        destination.latitude + "," + destination.longitude +
-//                        "21.004344,105.8426233" +
-                        "&key=" + getString(R.string.google_api_browser_key);
-        new GetDirection().execute(queryDirection);
-    }
-
     private class GetDirection extends AsyncTask<String, Void, String> {
-        private static final String TAG = "BackgroundTask";
 
         @Override
         protected String doInBackground(String... ulr) {
@@ -365,39 +303,33 @@ public class MainActivity extends AppCompatActivity
 
             try {
                 response = okHttpClient.newCall(request).execute();
+                Log.i("Direction1 :", "" + isCancelled());
                 return response.body().string();
             } catch (IOException e) {
                 // TODO Auto-generated catch block
                 e.printStackTrace();
             }
             return null;
-
         }
 
         @Override
         protected void onPostExecute(String result) {
-            Log.i("Direction :", result);
             PolylineOptions rectLine = new PolylineOptions().width(5).color(Color.BLUE).geodesic(true);
 
             Gson gson = new GsonBuilder()
                     .setFieldNamingPolicy(FieldNamingPolicy.LOWER_CASE_WITH_UNDERSCORES)
                     .create();
             DirectionPointGson directionPointGson = gson.fromJson(result, DirectionPointGson.class);
+            DirectionPointGson.Route routeFirst = directionPointGson.getRoutes().get(0);
 
-            // Not exactly if draw by this way
-//            DirectionPointGson.Leg legFirst = directionPointGson.getRoutes().get(0).getLegs().get(0);
-//            ArrayList<DirectionPointGson.Step> steps = legFirst.getSteps();
-//            int size = steps.size();
-//            for (int i = 0; i < size; i++) {
-//                LocationItem locationItem = steps.get(i).getStartLocation();
-//                rectLine.add(new LatLng(locationItem.getLat(), locationItem.getLng()));
-//                if (i == size - 1) {
-//                    rectLine.add(new LatLng(steps.get(i).getEndLocation().getLat(), steps.get(i).getEndLocation().getLng()));
-//                }
-//            }
-            DirectionPointGson.Polyline polylineOverview = directionPointGson.getRoutes().get(0).getOverviewPolyline();
+            DirectionPointGson.Polyline polylineOverview = routeFirst.getOverviewPolyline();
             rectLine.addAll(StaticMethod.decodePoly(polylineOverview.getPoints()));
+            if (polyline != null) polyline.remove();
             polyline = mMap.addPolyline(rectLine);
+
+            DirectionPointGson.Leg legFirst = routeFirst.getLegs().get(0);
+            mMarker.setTitle(legFirst.getStartAddress());
+            destinationMarker.setTitle(legFirst.getEndAddress());
         }
     }
 
@@ -421,5 +353,42 @@ public class MainActivity extends AppCompatActivity
         });
 
         alertDialog.show();
+    }
+
+    private class GetNameFromLatLng extends AsyncTask<String, Void, String> {
+        private Location location;
+
+        public GetNameFromLatLng(Location location) {
+            this.location = location;
+        }
+
+        @Override
+        protected String doInBackground(String... ulr) {
+            Response response;
+            String queryResGeocode = "https://maps.googleapis.com/maps/api/geocode/json?latlng=" +
+                    location.getLatitude() + "," + location.getLongitude() +
+                    "&key=" + getString(R.string.google_api_browser_key);
+            Request request = new Request.Builder()
+                    .url(queryResGeocode)
+                    .build();
+
+            try {
+                response = okHttpClient.newCall(request).execute();
+                return response.body().string();
+            } catch (IOException e) {
+                // TODO Auto-generated catch block
+                e.printStackTrace();
+            }
+            return null;
+        }
+
+        @Override
+        protected void onPostExecute(String result) {
+            Gson gson = new GsonBuilder()
+                    .setFieldNamingPolicy(FieldNamingPolicy.LOWER_CASE_WITH_UNDERSCORES)
+                    .create();
+            ReverseGeoCodeGson reverseGeoCodeGson = gson.fromJson(result, ReverseGeoCodeGson.class);
+            mMarker.setTitle(reverseGeoCodeGson.getResults().get(0).getFormattedAddress());
+        }
     }
 }
