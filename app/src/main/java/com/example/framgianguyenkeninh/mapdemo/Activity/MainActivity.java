@@ -320,16 +320,18 @@ public class MainActivity extends AppCompatActivity
                     .setFieldNamingPolicy(FieldNamingPolicy.LOWER_CASE_WITH_UNDERSCORES)
                     .create();
             DirectionPointGson directionPointGson = gson.fromJson(result, DirectionPointGson.class);
-            DirectionPointGson.Route routeFirst = directionPointGson.getRoutes().get(0);
+            if (directionPointGson != null) {
+                DirectionPointGson.Route routeFirst = directionPointGson.getRoutes().get(0);
 
-            DirectionPointGson.Polyline polylineOverview = routeFirst.getOverviewPolyline();
-            rectLine.addAll(StaticMethod.decodePoly(polylineOverview.getPoints()));
-            if (polyline != null) polyline.remove();
-            polyline = mMap.addPolyline(rectLine);
+                DirectionPointGson.Polyline polylineOverview = routeFirst.getOverviewPolyline();
+                rectLine.addAll(StaticMethod.decodePoly(polylineOverview.getPoints()));
+                if (polyline != null) polyline.remove();
+                polyline = mMap.addPolyline(rectLine);
 
-            DirectionPointGson.Leg legFirst = routeFirst.getLegs().get(0);
-            mMarker.setTitle(legFirst.getStartAddress());
-            destinationMarker.setTitle(legFirst.getEndAddress());
+                DirectionPointGson.Leg legFirst = routeFirst.getLegs().get(0);
+                mMarker.setTitle(legFirst.getStartAddress());
+                destinationMarker.setTitle(legFirst.getEndAddress());
+            }
         }
     }
 
@@ -388,7 +390,9 @@ public class MainActivity extends AppCompatActivity
                     .setFieldNamingPolicy(FieldNamingPolicy.LOWER_CASE_WITH_UNDERSCORES)
                     .create();
             ReverseGeoCodeGson reverseGeoCodeGson = gson.fromJson(result, ReverseGeoCodeGson.class);
-            mMarker.setTitle(reverseGeoCodeGson.getResults().get(0).getFormattedAddress());
+            if (reverseGeoCodeGson != null) {
+                mMarker.setTitle(reverseGeoCodeGson.getResults().get(0).getFormattedAddress());
+            }
         }
     }
 }
